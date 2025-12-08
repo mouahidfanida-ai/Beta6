@@ -1,8 +1,31 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// HARDCODED API KEY
-// This ensures the app works immediately on deployment without setting up Vercel env vars.
-const GEMINI_API_KEY = "AIzaSyDrK28IHOxcee3vpwD9kgW9ygS6L3HjuR8";
+// Retrieve API Key from various environment variable formats or fallback
+// NOTE: In Vercel, you likely need to name your env var 'VITE_GEMINI_API_KEY' or 'REACT_APP_GEMINI_API_KEY' for it to be exposed to the browser.
+const getApiKey = () => {
+  try {
+    // Check for VITE_ prefix (Vite)
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_API_KEY) {
+      // @ts-ignore
+      return import.meta.env.VITE_GEMINI_API_KEY;
+    }
+  } catch (e) {}
+  
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+       // Check for REACT_APP_ prefix (Create React App)
+       if (process.env.REACT_APP_GEMINI_API_KEY) return process.env.REACT_APP_GEMINI_API_KEY;
+       // Check for standard env var (Custom builds)
+       if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+    }
+  } catch (e) {}
+
+  // Fallback to the hardcoded key if environment variables are missing
+  return "AIzaSyDrK28IHOxcee3vpwD9kgW9ygS6L3HjuR8";
+};
+
+const GEMINI_API_KEY = getApiKey();
 
 const getAIClient = () => {
   if (!GEMINI_API_KEY) {
@@ -31,7 +54,7 @@ const fileToGenerativePart = async (file: File): Promise<string> => {
 
 export const generateSessionContent = async (topic: string, type: 'description' | 'quiz'): Promise<string> => {
   const ai = getAIClient();
-  if (!ai) return "AI Service Unavailable";
+  if (!ai) return "AI Service Unavailable: API Key missing or invalid.";
 
   let prompt = "";
   
@@ -49,10 +72,13 @@ export const generateSessionContent = async (topic: string, type: 'description' 
     return response.text() || "No content generated.";
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    if (error.message?.includes('404')) {
+    const errorMessage = error.message || error.toString();
+    
+    if (errorMessage.includes('404')) {
         return "Error: Model not found. Please ensure the API Key has access to Generative Language API.";
     }
-    return "Failed to generate content. Please check your API key and try again.";
+    // Return the actual error message to help debugging
+    return `Failed to generate content. Error: ${errorMessage}`;
   }
 };
 
@@ -79,7 +105,7 @@ export const extractStudentNamesFromImage = async (imageFile: File): Promise<str
     return text.split('\n').map(name => name.trim()).filter(name => name.length > 0);
   } catch (error: any) {
     console.error("Gemini Vision Error:", error);
-    throw new Error("Failed to extract names from image.");
+    throw new Error(`Failed to extract names: ${error.message}`);
   }
 };
 
@@ -121,8 +147,8 @@ export const extractGradesFromImage = async (imageFile: File): Promise<any[]> =>
     text = text.replace(/```json/g, '').replace(/```/g, '').trim();
     
     return JSON.parse(text);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Grade Extraction Error:", error);
-    throw new Error("Failed to extract grades from image.");
+    throw new Error(`Failed to extract grades: ${error.message}`);
   }
 };
