@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, FileText, Video, Sparkles, Loader2, Folder, ArrowLeft, Save, GraduationCap, Calculator, Calendar, Image as ImageIcon, Upload, Pencil, X, Link as LinkIcon, Film, MoreHorizontal, Search, Scan, User, Star } from 'lucide-react';
+import { Plus, Trash2, FileText, Video, Sparkles, Loader2, Folder, ArrowLeft, Save, GraduationCap, Calculator, Calendar, Image as ImageIcon, Upload, Pencil, X, Link as LinkIcon, Film, MoreHorizontal, Search, Scan, User, Star, ChevronDown, ChevronUp } from 'lucide-react';
 import { getClasses, saveClass, deleteClass, getSessions, saveSession, deleteSession, getStudents, saveStudent, deleteStudent, getActivities, saveActivity, deleteActivity, uploadSessionVideo } from '../services/store';
 import { ClassGroup, Session, Student, Activity } from '../types';
 import { generateSessionContent, extractGradesFromImage } from '../services/gemini';
@@ -15,6 +15,7 @@ const Dashboard: React.FC = () => {
   
   // Navigation state for Sessions/Grades tab
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   
   // Students State
   const [students, setStudents] = useState<Student[]>([]);
@@ -71,6 +72,7 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     setSelectedClassId(null);
     setStudents([]);
+    setExpandedSessions(new Set());
   }, [activeTab]);
 
   useEffect(() => {
@@ -84,6 +86,18 @@ const Dashboard: React.FC = () => {
       fetchStudentsData();
     }
   }, [activeTab, selectedClassId]);
+
+  const toggleSessionExpansion = (sessionId: string) => {
+      setExpandedSessions(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(sessionId)) {
+              newSet.delete(sessionId);
+          } else {
+              newSet.add(sessionId);
+          }
+          return newSet;
+      });
+  };
 
   // --- Handlers (CRUD) ---
 
@@ -670,97 +684,121 @@ const Dashboard: React.FC = () => {
 
                    {displayedSessions.map(session => {
                       const videoUrls = session.videoUrls && session.videoUrls.length > 0 ? session.videoUrls : [session.videoUrl];
+                      const isExpanded = expandedSessions.has(session.id);
+                      
                       return (
-                          <div key={session.id} className="bg-white rounded-5xl shadow-card border border-slate-100 overflow-hidden hover:shadow-lg transition-shadow">
-                              <div className="p-8 md:p-10">
-                                  <div className="flex justify-between items-start mb-8">
-                                      <div>
-                                          <div className="flex items-center gap-3 mb-3">
-                                              <span className="px-4 py-1.5 rounded-full bg-brand-50 text-brand-700 text-xs font-bold uppercase tracking-widest">
-                                                  {session.date}
-                                              </span>
-                                              {session.isHighlight && (
-                                                <span className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold uppercase tracking-widest flex items-center">
-                                                    <Star className="w-3 h-3 mr-1 fill-current" /> Featured
-                                                </span>
-                                              )}
-                                          </div>
-                                          <h3 className="text-2xl md:text-3xl font-bold text-slate-900">{session.title}</h3>
+                          <div key={session.id} className="bg-white rounded-[2rem] md:rounded-[3.5rem] shadow-card border border-slate-100 overflow-hidden p-5 sm:p-8 md:p-12 hover:shadow-xl transition-all duration-300">
+                              <div className="flex flex-col sm:flex-row justify-between items-start mb-6 sm:mb-10 gap-4">
+                                  <div className="w-full sm:w-auto">
+                                      <div className="flex items-center gap-3 mb-3">
+                                          <span className="inline-block px-4 py-1.5 bg-brand-50 text-brand-700 rounded-full text-xs font-bold uppercase tracking-widest">
+                                              {session.date}
+                                          </span>
+                                          {session.isHighlight && (
+                                            <span className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold uppercase tracking-widest flex items-center w-fit">
+                                                <Star className="w-3 h-3 mr-1 fill-current" /> Featured
+                                            </span>
+                                          )}
                                       </div>
-                                      <div className="flex gap-2">
-                                        <button 
-                                            onClick={() => handleOpenSessionModal(session)}
-                                            className="p-3 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition-all"
-                                            title="Edit Session"
-                                        >
-                                            <Pencil className="h-5 w-5" />
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDeleteSession(session.id)} 
-                                            className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                                            title="Delete Session"
-                                        >
-                                            <Trash2 className="h-5 w-5" />
-                                        </button>
-                                      </div>
+                                      <h3 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 leading-tight">{session.title}</h3>
                                   </div>
-
-                                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                                      {/* Video Section */}
-                                      <div className="lg:col-span-1 space-y-6">
-                                         {videoUrls.map((url, idx) => {
-                                            const embedUrl = getEmbedUrl(url);
-                                            const isDrive = embedUrl.includes('drive.google.com');
-                                            return (
-                                            <div key={idx} className="rounded-3xl overflow-hidden bg-slate-900 aspect-video shadow-2xl relative group ring-4 ring-slate-100">
-                                                {isDrive ? (
-                                                    <iframe 
-                                                        src={embedUrl} 
-                                                        className="w-full h-full border-0" 
-                                                        allowFullScreen 
-                                                        title="Video Player"
-                                                    />
-                                                ) : (
-                                                    <video 
-                                                        controls 
-                                                        className="w-full h-full object-cover"
-                                                        src={embedUrl}
-                                                    />
-                                                )}
-                                            </div>
-                                         )})}
-                                      </div>
-
-                                      {/* Content Section */}
-                                      <div className="lg:col-span-2 space-y-6">
-                                          <div>
-                                              <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-3">Description</h4>
-                                              <p className="text-slate-600 leading-relaxed bg-slate-50 p-8 rounded-4xl font-medium">
-                                                  {session.description}
-                                              </p>
-                                          </div>
-                                          
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                              {session.aiNotes && (
-                                                  <div className="bg-amber-50 p-8 rounded-4xl border border-amber-100/50">
-                                                      <h4 className="text-sm font-bold text-amber-800 uppercase tracking-widest mb-3 flex items-center">
-                                                          <Sparkles className="w-4 h-4 mr-2" /> AI Quiz / Notes
-                                                      </h4>
-                                                      <p className="text-amber-900/80 text-sm whitespace-pre-line font-medium leading-relaxed">{session.aiNotes}</p>
-                                                  </div>
-                                              )}
-                                              {session.pdfUrl && (
-                                                  <a href={session.pdfUrl} target="_blank" rel="noreferrer" className="bg-blue-50 p-8 rounded-4xl border border-blue-100/50 flex items-center justify-center flex-col text-center hover:bg-blue-100 transition-colors group">
-                                                      <div className="p-4 bg-white rounded-2xl shadow-sm mb-3 group-hover:scale-110 transition-transform">
-                                                          <FileText className="w-8 h-8 text-blue-500" />
-                                                      </div>
-                                                      <span className="font-bold text-blue-700">Download PDF Resource</span>
-                                                  </a>
-                                              )}
-                                          </div>
-                                      </div>
+                                  <div className="flex gap-2 self-end sm:self-start">
+                                    <button 
+                                        onClick={() => handleOpenSessionModal(session)}
+                                        className="p-3 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition-all"
+                                        title="Edit Session"
+                                    >
+                                        <Pencil className="h-5 w-5" />
+                                    </button>
+                                    <button 
+                                        onClick={() => handleDeleteSession(session.id)} 
+                                        className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                                        title="Delete Session"
+                                    >
+                                        <Trash2 className="h-5 w-5" />
+                                    </button>
+                                    <button 
+                                        onClick={() => toggleSessionExpansion(session.id)}
+                                        className={`p-3 rounded-full transition-colors ${isExpanded ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-400 hover:bg-brand-50 hover:text-brand-600'}`}
+                                    >
+                                        {isExpanded ? <ChevronUp className="w-6 h-6" /> : <ChevronDown className="w-6 h-6" />}
+                                    </button>
                                   </div>
                               </div>
+
+                              <div className={`grid grid-cols-1 ${isExpanded ? 'lg:grid-cols-12' : ''} gap-8 md:gap-12`}>
+                                  {/* Video Section */}
+                                  <div className={`${isExpanded ? 'lg:col-span-7' : 'w-full'} space-y-6 transition-all`}>
+                                     {videoUrls.map((url, idx) => {
+                                        const embedUrl = getEmbedUrl(url);
+                                        const isDrive = embedUrl.includes('drive.google.com');
+                                        return (
+                                        <div key={idx} className="rounded-2xl md:rounded-[2rem] overflow-hidden bg-black aspect-video shadow-2xl relative group ring-2 sm:ring-4 ring-slate-100 w-full">
+                                            {isDrive ? (
+                                                <iframe 
+                                                    src={embedUrl} 
+                                                    className="w-full h-full border-0" 
+                                                    allowFullScreen 
+                                                    title="Video Player"
+                                                />
+                                            ) : (
+                                                <video 
+                                                    controls 
+                                                    className="w-full h-full object-cover"
+                                                    src={embedUrl}
+                                                />
+                                            )}
+                                        </div>
+                                     )})}
+                                  </div>
+
+                                  {/* Content Section */}
+                                  {isExpanded && (
+                                    <div className="lg:col-span-5 flex flex-col gap-6 animate-fadeIn">
+                                        <div className="bg-slate-50 p-6 sm:p-8 rounded-[2rem] flex-1">
+                                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Description</h4>
+                                            <p className="text-slate-600 text-base sm:text-lg leading-relaxed whitespace-pre-line font-medium">
+                                                {session.description}
+                                            </p>
+                                        </div>
+                                        
+                                        {session.aiNotes && (
+                                            <div className="bg-amber-50 p-6 sm:p-8 rounded-[2rem] border border-amber-100/50">
+                                                <h4 className="text-xs font-bold text-amber-800 uppercase tracking-widest mb-3 flex items-center">
+                                                    <Sparkles className="w-4 h-4 mr-2" /> AI Quiz / Notes
+                                                </h4>
+                                                <p className="text-amber-900/80 text-sm whitespace-pre-line font-medium leading-relaxed">{session.aiNotes}</p>
+                                            </div>
+                                        )}
+                                        {session.pdfUrl && (
+                                            <a href={session.pdfUrl} target="_blank" rel="noreferrer" className="bg-blue-50 p-6 sm:p-8 rounded-[2rem] border border-blue-100/50 flex items-center justify-center flex-col text-center hover:bg-blue-100 transition-colors group">
+                                                <div className="p-4 bg-white rounded-2xl shadow-sm mb-3 group-hover:scale-110 transition-transform">
+                                                    <FileText className="w-8 h-8 text-blue-500" />
+                                                </div>
+                                                <span className="font-bold text-blue-700">Download PDF Resource</span>
+                                            </a>
+                                        )}
+                                    </div>
+                                  )}
+                              </div>
+
+                              <div className="mt-8 sm:mt-12 flex justify-center border-t border-slate-50 pt-8">
+                                    <button 
+                                        onClick={() => toggleSessionExpansion(session.id)}
+                                        className={`flex items-center w-full sm:w-auto justify-center px-8 py-4 rounded-full font-bold text-sm transition-all group ${
+                                            isExpanded 
+                                                ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' 
+                                                : 'bg-slate-900 text-white hover:bg-brand-600 shadow-lg hover:shadow-brand-500/30'
+                                        }`}
+                                    >
+                                        {isExpanded ? 'Hide Description & Quiz' : 'Show Description & Quiz'}
+                                        {isExpanded ? (
+                                            <ChevronUp className="w-4 h-4 ml-2 group-hover:-translate-y-1 transition-transform" />
+                                        ) : (
+                                            <ChevronDown className="w-4 h-4 ml-2 group-hover:translate-y-1 transition-transform" />
+                                        )}
+                                    </button>
+                                </div>
                           </div>
                       );
                    })}
