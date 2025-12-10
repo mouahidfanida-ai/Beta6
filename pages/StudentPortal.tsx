@@ -1,14 +1,16 @@
+
 import React, { useState, useEffect } from 'react';
 import { getClasses, getSessions, getStudents } from '../services/store';
 import { ClassGroup, Session, Student } from '../types';
 import { Video, FileText, Calendar, ArrowLeft, BookOpen, Loader2, Calculator, GraduationCap, Filter, Check, ChevronDown, ChevronUp, Smartphone } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 const StudentPortal: React.FC = () => {
+  const location = useLocation();
   const [classes, setClasses] = useState<ClassGroup[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(location.state?.classId || null);
   
   // New state for tabs and students
   const [activeTab, setActiveTab] = useState<'sessions' | 'grades'>('sessions');
@@ -32,6 +34,13 @@ const StudentPortal: React.FC = () => {
     };
     fetchData();
   }, []);
+
+  // Handle direct navigation via state updates
+  useEffect(() => {
+    if (location.state?.classId) {
+        setSelectedClassId(location.state.classId);
+    }
+  }, [location.state]);
 
   // Fetch students when a class is selected
   useEffect(() => {
@@ -125,6 +134,16 @@ const StudentPortal: React.FC = () => {
       const [year, month] = monthStr.split('-');
       const date = new Date(parseInt(year), parseInt(month) - 1, 1);
       return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  const getProfileLink = (student: Student) => {
+      const cls = classes.find(c => c.id === student.classId);
+      if (!cls) return '#';
+      // Clean class name to be URL friendly (alphanumeric only)
+      const cleanClassName = cls.name.replace(/[^a-zA-Z0-9]/g, '');
+      const uniqueId = student.uniqueId || student.id; 
+      // Format: ClassNameNumber (e.g. 5thGrade12)
+      return `/student-profile/${cleanClassName}${uniqueId}`;
   };
 
   if (isLoading) {
@@ -405,6 +424,7 @@ const StudentPortal: React.FC = () => {
                                 <table className="min-w-full">
                                     <thead>
                                         <tr className="border-b border-slate-100">
+                                            <th className="px-6 sm:px-8 py-5 text-center text-xs font-extrabold text-slate-400 uppercase tracking-widest w-16">#</th>
                                             <th className="px-6 sm:px-8 py-5 text-left text-xs font-extrabold text-slate-400 uppercase tracking-widest">Student Name</th>
                                             <th className="px-6 sm:px-8 py-5 text-center text-xs font-extrabold text-slate-400 uppercase tracking-widest">Term 1</th>
                                             <th className="px-6 sm:px-8 py-5 text-center text-xs font-extrabold text-slate-400 uppercase tracking-widest">Term 2</th>
@@ -415,8 +435,13 @@ const StudentPortal: React.FC = () => {
                                     <tbody className="divide-y divide-slate-50">
                                         {students.map((student) => (
                                             <tr key={student.id} className="hover:bg-slate-50/50 transition-colors group">
+                                                <td className="px-6 sm:px-8 py-6 text-center">
+                                                    <span className="text-xs font-bold text-slate-300 bg-slate-100 px-2 py-1 rounded-md">
+                                                        {student.uniqueId || '-'}
+                                                    </span>
+                                                </td>
                                                 <td className="px-6 sm:px-8 py-6 whitespace-nowrap text-base font-bold text-slate-900">
-                                                    <Link to={`/student-profile/${student.id}`} className="flex items-center gap-3 hover:text-brand-600 transition-colors">
+                                                    <Link to={getProfileLink(student)} className="flex items-center gap-3 hover:text-brand-600 transition-colors">
                                                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold group-hover:bg-brand-100 group-hover:text-brand-600 transition-colors">
                                                             {student.name.charAt(0)}
                                                         </div>

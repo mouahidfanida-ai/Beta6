@@ -25,6 +25,7 @@ const mapStudentFromDB = (data: any): Student => ({
   id: data.id,
   classId: data.class_id,
   name: data.name || '',
+  uniqueId: data.unique_number ? Number(data.unique_number) : undefined,
   note1: Number(data.note1) || 0,
   note2: Number(data.note2) || 0,
   note3: Number(data.note3) || 0,
@@ -42,6 +43,12 @@ const mapActivityFromDB = (data: any): Activity => ({
 // Helper to check for missing table errors
 const isTableMissingError = (error: any) => {
   return error.code === '42P01' || error.code === 'PGRST205';
+};
+
+// Helper for UUID validation
+const isValidUUID = (id: string) => {
+  const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return regex.test(id);
 };
 
 export const getClasses = async (): Promise<ClassGroup[]> => {
@@ -234,7 +241,6 @@ export const saveSession = async (newSession: Partial<Session> & { videoUrls?: s
       data = retryResult.data;
       error = retryResult.error;
       
-      // Removed the alert here to prevent UI interruption
       if (!error) {
           console.warn("Session saved without highlight feature due to schema mismatch.");
       }
@@ -299,6 +305,7 @@ export const getStudents = async (classId: string): Promise<Student[]> => {
     .from('students')
     .select('*')
     .eq('class_id', classId)
+    // NOTE: Removed server-side sort by unique_number to prevent crash if column is missing (error 42703)
     .order('name', { ascending: true });
 
   if (error) {
@@ -309,10 +316,28 @@ export const getStudents = async (classId: string): Promise<Student[]> => {
     console.error('Error fetching students:', JSON.stringify(error, null, 2));
     return [];
   }
-  return (data || []).map(mapStudentFromDB);
+
+  const students = (data || []).map(mapStudentFromDB);
+
+  // Sort client-side: Unique ID (if exists) -> Name
+  return students.sort((a, b) => {
+      // Put students with IDs first, sorted by ID
+      const idA = a.uniqueId ?? Number.MAX_SAFE_INTEGER;
+      const idB = b.uniqueId ?? Number.MAX_SAFE_INTEGER;
+      
+      if (idA !== idB) return idA - idB;
+      return a.name.localeCompare(b.name);
+  });
 };
 
 export const getStudent = async (id: string): Promise<Student | null> => {
+  // Validate UUID format to prevent postgres error 22P02
+  // If id is "ClassName+UUID" (broken format), this check will fail gracefully
+  if (!isValidUUID(id)) {
+    console.warn(`getStudent called with invalid UUID format: ${id}. Skipping fetch.`);
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('students')
     .select('*')
@@ -334,6 +359,7 @@ export const saveStudent = async (student: Partial<Student>): Promise<Student | 
     note1: student.note1 ?? 0,
     note2: student.note2 ?? 0,
     note3: student.note3 ?? 0,
+    unique_number: student.uniqueId
   };
   
   // Only include ID if it's a valid UUID (not a temp ID)
@@ -341,11 +367,46 @@ export const saveStudent = async (student: Partial<Student>): Promise<Student | 
     payload.id = student.id;
   }
 
-  const { data, error } = await supabase
+  // Auto-increment logic: if unique_number is missing, calculate it
+  if (!payload.unique_number) {
+    try {
+        // Use select('*') instead of select('unique_number') to prevent 42703 error if column is missing
+        const { data: existingStudents, error: fetchError } = await supabase
+            .from('students')
+            .select('*') 
+            .eq('class_id', student.classId);
+            
+        if (!fetchError && existingStudents) {
+             const maxId = existingStudents.reduce((max: number, curr: any) => {
+                const num = Number(curr.unique_number) || 0;
+                return num > max ? num : max;
+            }, 0);
+            payload.unique_number = maxId + 1;
+        }
+    } catch (err) {
+        console.warn('Failed to calculate unique number', err);
+    }
+  }
+
+  let { data, error } = await supabase
     .from('students')
     .upsert([payload])
     .select()
     .maybeSingle();
+
+  // Retry logic if unique_number column is missing in DB (Error 42703)
+  if (error && (error.code === '42703' || error.message?.includes('unique_number'))) {
+      console.warn("Column 'unique_number' missing in DB. Saving student without it.");
+      delete payload.unique_number;
+      const retry = await supabase
+        .from('students')
+        .upsert([payload])
+        .select()
+        .maybeSingle();
+        
+      data = retry.data;
+      error = retry.error;
+  }
 
   if (error) {
     console.error('Error saving student:', JSON.stringify(error, null, 2));
@@ -353,6 +414,59 @@ export const saveStudent = async (student: Partial<Student>): Promise<Student | 
   }
   if (!data) return null;
   return mapStudentFromDB(data);
+};
+
+export const ensureClassStudentNumbers = async (classId: string): Promise<boolean> => {
+  // 1. Get all students
+  const { data: students, error } = await supabase
+    .from('students')
+    .select('*')
+    .eq('class_id', classId)
+    .order('name'); // Alphabetical order for ID assignment
+
+  if (error || !students) return false;
+
+  // 2. iterate and assign numbers to those who don't have them
+  // We determine the next available ID by looking at the max existing ID.
+  let maxId = students.reduce((acc, curr) => {
+      const num = curr.unique_number ? Number(curr.unique_number) : 0;
+      return num > acc ? num : acc;
+  }, 0);
+
+  const updates = [];
+  
+  for (const s of students) {
+      if (!s.unique_number) {
+          maxId++;
+          updates.push({
+              id: s.id,
+              unique_number: maxId
+          });
+      }
+  }
+
+  if (updates.length === 0) return true; // Nothing to do
+
+  // 3. Perform updates
+  let success = true;
+  for (const update of updates) {
+      const { error: updateError } = await supabase
+          .from('students')
+          .update({ unique_number: update.unique_number })
+          .eq('id', update.id);
+      
+      if (updateError) {
+          console.error("Failed to update student number", JSON.stringify(updateError));
+          
+          if (updateError.code === '42703') {
+             alert("Database Update Required:\n\nThe 'unique_number' column is missing in your 'students' table.\n\nPlease run this SQL in your Supabase SQL Editor:\n\nALTER TABLE students ADD COLUMN unique_number INTEGER;");
+             return false; // Stop immediately
+          }
+          success = false;
+      }
+  }
+  
+  return success;
 };
 
 export const deleteStudent = async (id: string): Promise<boolean> => {
@@ -401,7 +515,6 @@ export const getActivity = async (id: string): Promise<Activity | null> => {
 };
 
 export const saveActivity = async (activity: Partial<Activity>): Promise<Activity | null> => {
-  // Construct strict payload
   const payload: any = {
     title: activity.title,
     date: activity.date,
@@ -410,19 +523,12 @@ export const saveActivity = async (activity: Partial<Activity>): Promise<Activit
     pdf_url: activity.pdfUrl
   };
 
-  // Remove undefined keys to prevent DB errors
   Object.keys(payload).forEach(key => payload[key] === undefined && delete payload[key]);
-
-  // Log payload size for debugging
-  if (payload.image_url) console.log(`Payload: Sending Image (${payload.image_url.length} chars)`);
-  if (payload.pdf_url) console.log(`Payload: Sending PDF (${payload.pdf_url.length} chars)`);
 
   let resultData = null;
   let errorObj = null;
 
   if (activity.id) {
-    // UPDATE
-    console.log(`Attempting update for Activity ID: ${activity.id}`);
     const { data, error } = await supabase
       .from('activities')
       .update(payload)
@@ -433,8 +539,6 @@ export const saveActivity = async (activity: Partial<Activity>): Promise<Activit
     errorObj = error;
     resultData = data;
   } else {
-    // INSERT
-    console.log("Attempting insert new Activity");
     const { data, error } = await supabase
       .from('activities')
       .insert([payload])
@@ -448,31 +552,10 @@ export const saveActivity = async (activity: Partial<Activity>): Promise<Activit
   if (errorObj) {
     const err = errorObj as any;
     console.error('Error saving activity:', JSON.stringify(err, null, 2));
-    
-    if (err.code === '42P01') {
-        alert("Database Error: 'activities' table missing. Please run the SQL setup script.");
-    } else if (err.code === '42501') {
-        alert("Permission Denied: RLS policy is blocking the save. Please check Supabase settings.");
-    } else {
-        alert(`Database Error: ${err.message || 'Unknown error'}`);
-    }
     return null;
   }
   
-  if (!resultData) {
-      console.error("Save failed: No data returned from Supabase.");
-      alert(
-          "UPDATE FAILED: The database rejected the change.\n\n" +
-          "This is almost certainly a Row Level Security (RLS) issue.\n" +
-          "Supabase often blocks UPDATES by default while allowing INSERTS.\n\n" +
-          "TO FIX:\n" +
-          "1. Go to Supabase > SQL Editor\n" +
-          "2. Run this command:\n" +
-          "   alter table activities disable row level security;"
-      );
-      return null;
-  }
-  
+  if (!resultData) return null;
   return mapActivityFromDB(resultData);
 };
 

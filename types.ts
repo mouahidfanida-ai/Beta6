@@ -22,6 +22,7 @@ export interface Student {
   id: string;
   classId: string;
   name: string;
+  uniqueId?: number; // Sequential class-specific ID
   note1: number;
   note2: number;
   note3: number;

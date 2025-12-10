@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, FileText, Video, Sparkles, Loader2, Folder, ArrowLeft, Save, GraduationCap, Calculator, Calendar, Image as ImageIcon, Upload, Pencil, X, Link as LinkIcon, Film, MoreHorizontal, Search, Scan, User, Star, ChevronDown, ChevronUp } from 'lucide-react';
-import { getClasses, saveClass, deleteClass, getSessions, saveSession, deleteSession, getStudents, saveStudent, deleteStudent, getActivities, saveActivity, deleteActivity, uploadSessionVideo } from '../services/store';
+import { getClasses, saveClass, deleteClass, getSessions, saveSession, deleteSession, getStudents, saveStudent, deleteStudent, getActivities, saveActivity, deleteActivity, uploadSessionVideo, ensureClassStudentNumbers } from '../services/store';
 import { ClassGroup, Session, Student, Activity } from '../types';
 import { generateSessionContent, extractGradesFromImage } from '../services/gemini';
 import { Link } from 'react-router-dom';
@@ -450,9 +451,27 @@ const Dashboard: React.FC = () => {
     if (success) setStudents(prev => prev.filter(s => s.id !== id));
   };
 
+  const handleGenerateIds = async () => {
+      if (!selectedClassId) return;
+      setIsLoadingStudents(true);
+      await ensureClassStudentNumbers(selectedClassId);
+      const data = await getStudents(selectedClassId);
+      setStudents(data);
+      setIsLoadingStudents(false);
+  };
+
   const calculateAverage = (s: Student) => {
     const sum = (Number(s.note1) || 0) + (Number(s.note2) || 0) + (Number(s.note3) || 0);
     return (sum / 3).toFixed(2);
+  };
+
+  const getProfileLink = (student: Student) => {
+      const cls = classes.find(c => c.id === student.classId);
+      if (!cls) return '#';
+      const cleanClassName = cls.name.replace(/[^a-zA-Z0-9]/g, '');
+      const uniqueId = student.uniqueId || student.id; 
+      // Format: ClassNameNumber (e.g. 5thGrade12)
+      return `/student-profile/${cleanClassName}${uniqueId}`;
   };
 
   // Scan & Merge Functionality
@@ -490,6 +509,7 @@ const Dashboard: React.FC = () => {
 
             if (existingStudent) {
                 studentPayload.id = existingStudent.id;
+                studentPayload.uniqueId = existingStudent.uniqueId;
             }
             
             await saveStudent(studentPayload);
@@ -521,6 +541,10 @@ const Dashboard: React.FC = () => {
           </div>
       );
   }
+
+  const currentClass = selectedClassId ? classes.find(c => c.id === selectedClassId) : null;
+  const cleanClassName = currentClass?.name.replace(/[^a-zA-Z0-9]/g, '') || '';
+  const hasMissingIds = students.some(s => !s.uniqueId);
 
   return (
     <div className="min-h-screen bg-slate-50 pt-28 pb-12 px-4 sm:px-8">
@@ -675,7 +699,7 @@ const Dashboard: React.FC = () => {
                       </button>
                       <div>
                           <h2 className="text-3xl font-bold text-slate-900">
-                            {classes.find(c => c.id === selectedClassId)?.name}
+                            {currentClass?.name}
                           </h2>
                           <p className="text-slate-500 font-medium">Managing sessions for this class</p>
                       </div>
@@ -841,12 +865,22 @@ const Dashboard: React.FC = () => {
                        </button>
                        <div>
                            <h2 className="text-3xl font-bold text-slate-900">
-                              {classes.find(c => c.id === selectedClassId)?.name}
+                              {currentClass?.name}
                            </h2>
                            <p className="text-slate-500 font-medium">Grading Sheet</p>
                        </div>
                      </div>
                      <div className="flex gap-4">
+                        {hasMissingIds && (
+                             <button
+                                 onClick={handleGenerateIds}
+                                 className="inline-flex items-center px-6 py-4 bg-amber-500 rounded-full text-sm font-bold text-white hover:bg-amber-600 shadow-lg transition-all hover:-translate-y-0.5"
+                                 title="Batch assign unique numbers to existing students"
+                             >
+                                 <Sparkles className="w-4 h-4 mr-2" />
+                                 Generate IDs
+                             </button>
+                        )}
                         <button
                             onClick={() => {
                                 setIsScanModalOpen(true);
@@ -871,7 +905,8 @@ const Dashboard: React.FC = () => {
                     <table className="min-w-full">
                        <thead>
                           <tr className="bg-slate-50/50 border-b border-slate-100">
-                             <th className="px-10 py-6 text-left text-xs font-extrabold text-slate-400 uppercase tracking-widest">Student Name</th>
+                             <th className="px-6 py-6 text-center text-xs font-extrabold text-slate-400 uppercase tracking-widest w-24">ID</th>
+                             <th className="px-6 py-6 text-left text-xs font-extrabold text-slate-400 uppercase tracking-widest">Student Name</th>
                              <th className="px-6 py-6 text-center text-xs font-extrabold text-slate-400 uppercase tracking-widest w-32">Term 1</th>
                              <th className="px-6 py-6 text-center text-xs font-extrabold text-slate-400 uppercase tracking-widest w-32">Term 2</th>
                              <th className="px-6 py-6 text-center text-xs font-extrabold text-slate-400 uppercase tracking-widest w-32">Term 3</th>
@@ -880,9 +915,14 @@ const Dashboard: React.FC = () => {
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-slate-50">
-                          {students.map((student) => (
+                          {students.map((student, idx) => (
                              <tr key={student.id} className="hover:bg-slate-50/30 transition-colors">
-                                <td className="px-10 py-6 whitespace-nowrap">
+                                <td className="px-6 py-6 text-center">
+                                    <span className="text-xs font-extrabold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full whitespace-nowrap">
+                                        {student.uniqueId ? `${cleanClassName}${student.uniqueId}` : '-'}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-6 whitespace-nowrap">
                                    <input 
                                       type="text" 
                                       value={student.name}
@@ -913,7 +953,7 @@ const Dashboard: React.FC = () => {
                                       {/* View Profile Button */}
                                       {!student.id.startsWith('temp-') && (
                                           <Link 
-                                            to={`/student-profile/${student.id}`}
+                                            to={getProfileLink(student)}
                                             className="p-3 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition-colors"
                                             title="View Profile"
                                           >
