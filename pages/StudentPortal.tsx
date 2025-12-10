@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getClasses, getSessions, getStudents } from '../services/store';
 import { ClassGroup, Session, Student } from '../types';
-import { Video, FileText, Calendar, ArrowLeft, BookOpen, Loader2, Calculator, GraduationCap, Filter, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Video, FileText, Calendar, ArrowLeft, BookOpen, Loader2, Calculator, GraduationCap, Filter, Check, ChevronDown, ChevronUp, Smartphone } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const StudentPortal: React.FC = () => {
@@ -88,7 +88,7 @@ const StudentPortal: React.FC = () => {
       : [];
 
   // Get available months (YYYY-MM)
-  const availableMonths = Array.from(new Set(
+  const availableMonths: string[] = Array.from<string>(new Set(
       currentClassSessions.map(s => s.date.substring(0, 7))
   )).sort().reverse();
 
@@ -241,7 +241,7 @@ const StudentPortal: React.FC = () => {
                                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest">Filter by Month</h3>
                             </div>
                             <div className="flex flex-wrap gap-2 md:gap-3">
-                                {availableMonths.map(month => {
+                                {availableMonths.map((month: string) => {
                                     const isSelected = selectedMonths.includes(month);
                                     return (
                                         <button
@@ -260,6 +260,14 @@ const StudentPortal: React.FC = () => {
                                 })}
                                 {availableMonths.length === 0 && <p className="text-slate-400 font-medium italic">No session history available.</p>}
                             </div>
+                        </div>
+
+                        {/* Mobile Rotation Hint */}
+                        <div className="md:hidden text-center -mb-2">
+                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2 bg-slate-100/50 py-2 rounded-full mx-auto w-fit px-4 border border-slate-100">
+                                <Smartphone className="w-3 h-3 text-brand-500" />
+                                Rotate phone for best video experience
+                             </p>
                         </div>
 
                         <div className="grid grid-cols-1 gap-8 md:gap-10">

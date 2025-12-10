@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, FileText, Video, Sparkles, Loader2, Folder, ArrowLeft, Save, GraduationCap, Calculator, Calendar, Image as ImageIcon, Upload, Pencil, X, Link as LinkIcon, Film, MoreHorizontal, Search, Scan, User, Star, ChevronDown, ChevronUp } from 'lucide-react';
 import { getClasses, saveClass, deleteClass, getSessions, saveSession, deleteSession, getStudents, saveStudent, deleteStudent, getActivities, saveActivity, deleteActivity, uploadSessionVideo } from '../services/store';
@@ -1078,15 +1077,15 @@ const Dashboard: React.FC = () => {
                             ))}
                         </div>
                         
-                        <div className="flex gap-4 items-center">
-                            <div className="flex bg-white rounded-full p-1 border border-slate-200 shadow-sm">
+                        <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
+                            <div className="flex bg-white rounded-full p-1 border border-slate-200 shadow-sm w-fit">
                                 <button type="button" onClick={() => setTempVideoType('link')} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${tempVideoType === 'link' ? 'bg-slate-900 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>Link</button>
                                 <button type="button" onClick={() => setTempVideoType('upload')} className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${tempVideoType === 'upload' ? 'bg-slate-900 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>Upload</button>
                             </div>
-                            <div className="flex-grow">
+                            <div className="flex-grow w-full">
                                 {tempVideoType === 'link' ? (
                                     <div className="flex gap-2">
-                                        <input type="url" className="w-full rounded-2xl border-none bg-white shadow-sm text-sm p-3 font-medium placeholder-slate-400" placeholder="Paste URL (Dropbox, Google Drive)..." value={tempVideoInput} onChange={e => setTempVideoInput(e.target.value)} />
+                                        <input type="url" className="w-full rounded-2xl border-none bg-white shadow-sm text-sm p-4 font-medium placeholder-slate-400" placeholder="Paste URL (Dropbox, Google Drive)..." value={tempVideoInput} onChange={e => setTempVideoInput(e.target.value)} />
                                         <button type="button" onClick={handleAddVideoToPending} className="bg-brand-600 text-white px-5 rounded-2xl text-sm font-bold hover:bg-brand-700 shadow-lg shadow-brand-500/20">Add</button>
                                     </div>
                                 ) : (
